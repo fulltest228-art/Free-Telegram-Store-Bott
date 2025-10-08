@@ -117,7 +117,7 @@ def enter_admin_mode(message):
     chat_id = message.chat.id
     username = message.from_user.username
     # Assume admin ID is known (e.g., your chat ID). Replace with your ID.
-    admin_id = 123456789  # Change this to your Telegram chat ID
+    admin_id = 8354685313  # Change this to your Telegram chat ID
     if chat_id == admin_id and CreateDatas.add_admin(chat_id, username):
         bot.send_message(chat_id, "Admin mode activated. Choose an option:", reply_markup=create_admin_keyboard())
         logger.info(f"Admin mode activated for {username} (ID: {chat_id})")
