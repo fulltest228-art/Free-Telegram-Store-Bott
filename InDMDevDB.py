@@ -202,6 +202,16 @@ class GetDataFromDB:
         user = GetDataFromDB.get_user(user_id)
         return user['wallet'] if user else 0
 
+    @staticmethod
+    def get_orders(user_id):
+        try:
+            with db_lock:
+                cursor.execute("SELECT * FROM ShopOrderTable WHERE buyerid = ?", (user_id,))
+                return cursor.fetchall()
+        except Exception as e:
+            logger.error(f"Error getting orders for user {user_id}: {e}")
+            return None
+
 class UpdateData:
     @staticmethod
     def deduct_wallet(user_id, amount):
@@ -229,5 +239,22 @@ class UpdateData:
                 return True
         except Exception as e:
             logger.error(f"Error updating quantity for product {productnumber}: {e}")
+            db_connection.rollback()
+            return False
+
+    @staticmethod
+    def add_order(buyerid, buyerusername, productname, productprice, productdownloadlink, productnumber):
+        try:
+            with db_lock:
+                ordernumber = abs(hash(datetime.now().timestamp())) % 1000000  # Unique order number
+                cursor.execute(
+                    "INSERT INTO ShopOrderTable (buyerid, buyerusername, productname, productprice, paidmethod, productdownloadlink, ordernumber, productnumber) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    (buyerid, buyerusername, productname, productprice, 'YES', productdownloadlink, ordernumber, productnumber)
+                )
+                db_connection.commit()
+                logger.info(f"Order added for {buyerusername} (ID: {buyerid}): {ordernumber}")
+                return True
+        except Exception as e:
+            logger.error(f"Error adding order for {buyerusername}: {e}")
             db_connection.rollback()
             return False
