@@ -193,7 +193,7 @@ def send_topup_invoice(message):
         currency='XTR',  # TON currency
         prices=prices,
         start_parameter="topup",
-        payload=f"topup_{chat_id}"
+        payload=f"topup_{chat_id}"  # Corrected to string payload
     )
     logger.info(f"Top up invoice sent to {message.from_user.username} (ID: {chat_id})")
 
