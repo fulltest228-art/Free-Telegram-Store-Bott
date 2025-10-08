@@ -25,12 +25,12 @@ flask_app = Flask(__name__)
 flask_app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'your-secret-key-here')
 
 # Bot connection
-webhook_url = os.getenv('NGROK_HTTPS_URL')
+webhook_url = os.getenv('WEBHOOK_URL')
 bot_token = os.getenv('TELEGRAM_BOT_TOKEN')
 store_currency = os.getenv('STORE_CURRENCY', 'USD')
 
 if not webhook_url or not bot_token:
-    logger.error("Missing required environment variables: NGROK_HTTPS_URL or TELEGRAM_BOT_TOKEN")
+    logger.error("Missing required environment variables: WEBHOOK_URL or TELEGRAM_BOT_TOKEN")
     exit(1)
 
 bot = TeleBot(bot_token, threaded=False)
@@ -47,16 +47,17 @@ except Exception as e:
 # Process webhook calls
 @flask_app.route('/webhook', methods=['POST'])
 def webhook():
-    if request.headers.get('content-type') == 'application/json':
+    if request.method == 'POST' and request.headers.get('content-type') == 'application/json':
         json_string = request.get_data().decode('utf-8')
         update = types.Update.de_json(json_string)
         bot.process_new_updates([update])
         return '', 200
-    logger.warning("Invalid content type in webhook request")
+    logger.warning(f"Invalid request to /webhook: method={request.method}, content-type={request.headers.get('content-type')}")
     return '', 400
 
 @flask_app.route('/', methods=['HEAD', 'GET'])
 def health_check():
+    logger.info(f"Health check: {request.method}")
     return '', 200
 
 # Main keyboard
@@ -92,8 +93,8 @@ def send_welcome(message):
 
 if __name__ == '__main__':
     try:
-        logger.info("Starting Flask application...")
-        flask_app.run(debug=False, host='0.0.0.0', port=int(os.getenv('PORT', 5000)))
+      logger.info("Starting Flask application...")
+      flask_app.run(debug=False, host='0.0.0.0', port=int(os.getenv('PORT', 5000)))
     except Exception as e:
         logger.error(f"Error starting Flask application: {e}")
         exit(1)
