@@ -193,7 +193,7 @@ def send_topup_invoice(message):
         currency='XTR',  # TON currency
         prices=prices,
         start_parameter="topup",
-        payload=f"topup_{chat_id}"  # Corrected to string payload
+        payload=f"topup_{chat_id}"  # Corrected payload as string
     )
     logger.info(f"Top up invoice sent to {message.from_user.username} (ID: {chat_id})")
 
@@ -217,13 +217,22 @@ def successful_payment(message):
 @bot.message_handler(commands=['admin'])
 def enter_admin_mode(message):
     chat_id = message.chat.id
-    username = message.from_user.username
-    if str(chat_id) in admin_ids and CreateDatas.add_admin(chat_id, username):
-        bot.send_message(chat_id, "Admin mode activated. Choose an option:", reply_markup=create_admin_keyboard())
-        logger.info(f"Admin mode activated for {username} (ID: {chat_id})")
-    else:
+    username = message.from_user.username or "Unknown"
+    logger.info(f"Admin command received from {username} (ID: {chat_id})")
+    if str(chat_id) not in admin_ids:
         bot.send_message(chat_id, "You are not an admin.", reply_markup=create_main_keyboard())
         logger.warning(f"Non-admin {username} (ID: {chat_id}) tried to enter admin mode")
+        return
+    try:
+        if CreateDatas.add_admin(chat_id, username):
+            bot.send_message(chat_id, "Admin mode activated. Choose an option:", reply_markup=create_admin_keyboard())
+            logger.info(f"Admin mode activated for {username} (ID: {chat_id})")
+        else:
+            bot.send_message(chat_id, "Failed to activate admin mode. Contact support.")
+            logger.error(f"Failed to add admin {username} (ID: {chat_id})")
+    except Exception as e:
+        bot.send_message(chat_id, f"Error activating admin mode: {e}. Contact support.")
+        logger.error(f"Exception in enter_admin_mode for {username} (ID: {chat_id}): {e}")
 
 # Handle admin actions
 @bot.message_handler(func=lambda message: message.text in ["Add Item 📦", "Edit Item ✏️", "List Products 📋", "Back 🔙"])
