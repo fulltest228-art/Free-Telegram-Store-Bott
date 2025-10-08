@@ -35,7 +35,7 @@ class CreateTables:
                 )""")
                 cursor.execute("""CREATE TABLE IF NOT EXISTS ShopProductTable(
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    productnumber INTEGER UNIQUE NOT NULL,
+                    productnumber INTEGER UNIQUE NOT NULL DEFAULT (ABS(RANDOM()) % 1000000), -- Auto-generated unique number
                     admin_id INTEGER NOT NULL,
                     username TEXT,
                     productname TEXT NOT NULL,
