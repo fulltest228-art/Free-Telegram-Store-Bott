@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 # Database configuration
 DB_FILE = 'InDMDevDBShop.db'
 db_connection = sqlite3.connect(DB_FILE, check_same_thread=False)
-db_connection.row_factory = sqlite3.Row  # Enable dict-like access to rows
+db_connection.row_factory = sqlite3.Row
 cursor = db_connection.cursor()
 db_lock = threading.Lock()
 
@@ -19,7 +19,6 @@ class CreateTables:
     def create_all_tables():
         try:
             with db_lock:
-                # Create ShopUserTable
                 cursor.execute("""CREATE TABLE IF NOT EXISTS ShopUserTable(
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     user_id INTEGER UNIQUE NOT NULL,
@@ -27,7 +26,6 @@ class CreateTables:
                     wallet INTEGER DEFAULT 0,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )""")
-                # Create ShopAdminTable
                 cursor.execute("""CREATE TABLE IF NOT EXISTS ShopAdminTable(
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     admin_id INTEGER UNIQUE NOT NULL,
@@ -35,7 +33,6 @@ class CreateTables:
                     wallet INTEGER DEFAULT 0,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )""")
-                # Create ShopProductTable
                 cursor.execute("""CREATE TABLE IF NOT EXISTS ShopProductTable(
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     productnumber INTEGER UNIQUE NOT NULL,
@@ -52,7 +49,6 @@ class CreateTables:
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     FOREIGN KEY (admin_id) REFERENCES ShopAdminTable(admin_id)
                 )""")
-                # Create ShopOrderTable
                 cursor.execute("""CREATE TABLE IF NOT EXISTS ShopOrderTable(
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     buyerid INTEGER NOT NULL,
@@ -70,14 +66,12 @@ class CreateTables:
                     FOREIGN KEY (buyerid) REFERENCES ShopUserTable(user_id),
                     FOREIGN KEY (productnumber) REFERENCES ShopProductTable(productnumber)
                 )""")
-                # Create ShopCategoryTable
                 cursor.execute("""CREATE TABLE IF NOT EXISTS ShopCategoryTable(
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     categorynumber INTEGER UNIQUE NOT NULL,
                     categoryname TEXT NOT NULL,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )""")
-                # Create PaymentMethodTable
                 cursor.execute("""CREATE TABLE IF NOT EXISTS PaymentMethodTable(
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     admin_id INTEGER,
@@ -113,43 +107,80 @@ class CreateDatas:
             logger.error(f"Error adding user {username}: {e}")
             db_connection.rollback()
             return False
-    # [Add other CreateDatas methods as needed from original]
+
+    @staticmethod
+    def add_admin(admin_id, username):
+        try:
+            with db_lock:
+                cursor.execute(
+                    "INSERT OR IGNORE INTO ShopAdminTable (admin_id, username, wallet) VALUES (?, ?, ?)",
+                    (admin_id, username, 0)
+                )
+                db_connection.commit()
+                logger.info(f"Admin added: {username} (ID: {admin_id})")
+                return True
+        except Exception as e:
+            logger.error(f"Error adding admin {username}: {e}")
+            db_connection.rollback()
+            return False
+
+    @staticmethod
+    def add_product(admin_id, username, productname, productdescription, productprice, productquantity, productcategory):
+        try:
+            with db_lock:
+                cursor.execute(
+                    "INSERT INTO ShopProductTable (admin_id, username, productname, productdescription, productprice, productquantity, productcategory) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    (admin_id, username, productname, productdescription, productprice, productquantity, productcategory)
+                )
+                db_connection.commit()
+                logger.info(f"Product added: {productname}")
+                return True
+        except Exception as e:
+            logger.error(f"Error adding product {productname}: {e}")
+            db_connection.rollback()
+            return False
 
 class GetDataFromDB:
     @staticmethod
-    def GetPaymentMethodTokenKeysCleintID(method_name):
+    def get_user(user_id):
         try:
-            cursor.execute(f"SELECT DISTINCT token_keys_clientid FROM PaymentMethodTable WHERE method_name = '{method_name}'")
-            payment_method = cursor.fetchone()[0]
-            return payment_method if payment_method is not None else None
+            with db_lock:
+                cursor.execute("SELECT * FROM ShopUserTable WHERE user_id = ?", (user_id,))
+                return cursor.fetchone()
         except Exception as e:
-            print(e)
+            logger.error(f"Error getting user {user_id}: {e}")
             return None
-    @staticmethod
-    def GetPaymentMethodSecretKeys(method_name):
-        try:
-            cursor.execute(f"SELECT DISTINCT secret_keys FROM PaymentMethodTable WHERE method_name = '{method_name}'")
-            payment_method = cursor.fetchone()[0]
-            return payment_method if payment_method is not None else None
-        except Exception as e:
-            print(e)
-            return None
-    @staticmethod
-    def GetAllPaymentMethodsInDB():
-        try:
-            cursor.execute(f"SELECT DISTINCT method_name FROM PaymentMethodTable")
-            payment_methods = cursor.fetchall()
-            return payment_methods if payment_methods else None
-        except Exception as e:
-            print(e)
-            return None
-    # [Add other GetDataFromDB methods like GetProductCategories, GetProductIDs, etc., replacing 'connected' with 'cursor']
 
-class CleanData:
-    def CleanShopUserTable():
+    @staticmethod
+    def get_products():
         try:
-            cursor.execute("DELETE FROM ShopUserTable")
-            db_connection.commit()
+            with db_lock:
+                cursor.execute("SELECT * FROM ShopProductTable")
+                return cursor.fetchall()
         except Exception as e:
-            print(e)
-    # [Add other CleanData methods as in original, replacing 'connected' with 'cursor']
+            logger.error(f"Error getting products: {e}")
+            return None
+
+    @staticmethod
+    def get_product_by_id(productnumber):
+        try:
+            with db_lock:
+                cursor.execute("SELECT * FROM ShopProductTable WHERE productnumber = ?", (productnumber,))
+                return cursor.fetchone()
+        except Exception as e:
+            logger.error(f"Error getting product {productnumber}: {e}")
+            return None
+
+class UpdateData:
+    @staticmethod
+    def update_product_quantity(productnumber, new_quantity):
+        try:
+            with db_lock:
+                cursor.execute("UPDATE ShopProductTable SET productquantity = ? WHERE productnumber = ?", (new_quantity, productnumber))
+                db_connection.commit()
+                logger.info(f"Updated quantity for product {productnumber}")
+                return True
+        except Exception as e:
+            logger.error(f"Error updating quantity for product {productnumber}: {e}")
+            db_connection.rollback()
+            return False
