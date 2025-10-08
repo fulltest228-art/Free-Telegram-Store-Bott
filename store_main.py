@@ -28,7 +28,7 @@ flask_app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'your-secret-key-here')
 webhook_url = os.getenv('WEBHOOK_URL')
 bot_token = os.getenv('TELEGRAM_BOT_TOKEN')
 store_currency = os.getenv('STORE_CURRENCY', 'USD')
-admin_ids = os.getenv('ADMIN_IDS', '8354685313').split(',')
+admin_ids = os.getenv('ADMIN_IDS', '987654321').split(',')
 
 if not webhook_url or not bot_token:
     logger.error("Missing required environment variables: WEBHOOK_URL or TELEGRAM_BOT_TOKEN")
@@ -135,10 +135,10 @@ def handle_admin_action(message):
     chat_id = message.chat.id
     text = message.text
     if text == "Add Item 📦":
-        user_states[chat_id] = "awaiting_product_name"
+        user_states[str(chat_id)] = "awaiting_product_name"
         bot.send_message(chat_id, "Send the product name:")
     elif text == "Edit Item ✏️":
-        user_states[chat_id] = "awaiting_edit_id"
+        user_states[str(chat_id)] = "awaiting_edit_id"
         bot.send_message(chat_id, "Send the product number to edit:")
     elif text == "List Products 📋":
         products = GetDataFromDB.get_products()
@@ -151,89 +151,92 @@ def handle_admin_action(message):
             bot.send_message(chat_id, "No products yet.")
         bot.send_message(chat_id, "Choose an option:", reply_markup=create_admin_keyboard())
     elif text == "Back 🔙":
-        del user_states[chat_id]
+        del user_states[str(chat_id)]
         bot.send_message(chat_id, "Returning to main menu.", reply_markup=create_main_keyboard())
 
 # Handle text input for admin actions
-@bot.message_handler(content_types=['text'])
+@bot.message_handler(content_types=['text', 'photo'])
 def handle_text(message):
     chat_id = message.chat.id
-    text = message.text
-    if chat_id in user_states:
-        if user_states[chat_id] == "awaiting_product_name":
-            user_states[chat_id] = "awaiting_product_price"
-            user_states[chat_id + '_name'] = text
+    text = message.text if message.text else None
+    if str(chat_id) in user_states:
+        state = user_states[str(chat_id)]
+        if state == "awaiting_product_name":
+            user_states[str(chat_id)] = "awaiting_product_price"
+            user_states[str(chat_id) + '_name'] = text
             bot.send_message(chat_id, "Send the product price:")
-        elif user_states[chat_id] == "awaiting_product_price":
-            user_states[chat_id] = "awaiting_product_quantity"
-            user_states[chat_id + '_price'] = int(text)
-            bot.send_message(chat_id, "Send the product quantity:")
-        elif user_states[chat_id] == "awaiting_product_quantity":
-            user_states[chat_id] = "awaiting_product_photo"
-            user_states[chat_id + '_quantity'] = int(text)
-            bot.send_message(chat_id, "Send the product photo (optional, or type 'skip' for no photo):")
-        elif user_states[chat_id] == "awaiting_product_photo":
-            name = user_states[chat_id + '_name']
-            price = user_states[chat_id + '_price']
-            quantity = user_states[chat_id + '_quantity']
+        elif state == "awaiting_product_price":
+            try:
+                price = int(text)
+                user_states[str(chat_id)] = "awaiting_product_quantity"
+                user_states[str(chat_id) + '_price'] = price
+                bot.send_message(chat_id, "Send the product quantity:")
+            except ValueError:
+                bot.send_message(chat_id, "Invalid price. Send a number.")
+        elif state == "awaiting_product_quantity":
+            try:
+                quantity = int(text)
+                user_states[str(chat_id)] = "awaiting_product_photo"
+                user_states[str(chat_id) + '_quantity'] = quantity
+                bot.send_message(chat_id, "Send the product photo (optional, or type 'skip' for no photo):")
+            except ValueError:
+                bot.send_message(chat_id, "Invalid quantity. Send a number.")
+        elif state == "awaiting_product_photo":
+            name = user_states[str(chat_id) + '_name']
+            price = user_states[str(chat_id) + '_price']
+            quantity = user_states[str(chat_id) + '_quantity']
             productimagelink = None
-            if text.lower() == 'skip':
-                # Add without photo
+            if text and text.lower() == 'skip':
                 if CreateDatas.add_product(chat_id, message.from_user.username, name, "", price, quantity, "Default Category", productimagelink):
                     bot.send_message(chat_id, f"Product '{name}' added successfully! Price: {price}, Quantity: {quantity}")
                     logger.info(f"Product '{name}' added by {message.from_user.username}")
                 else:
                     bot.send_message(chat_id, "Failed to add product. Check logs.")
-                del user_states[chat_id]
-                del user_states[chat_id + '_name']
-                del user_states[chat_id + '_price']
-                del user_states[chat_id + '_quantity']
+                del user_states[str(chat_id)]
+                del user_states[str(chat_id) + '_name']
+                del user_states[str(chat_id) + '_price']
+                del user_states[str(chat_id) + '_quantity']
                 bot.send_message(chat_id, "Choose an option:", reply_markup=create_admin_keyboard())
             else:
-                # Wait for photo
-                user_states[chat_id] = "awaiting_product_photo_upload"
-                bot.send_message(chat_id, "Send the product photo:")
-        elif user_states[chat_id] == "awaiting_product_photo_upload":
-            name = user_states[chat_id + '_name']
-            price = user_states[chat_id + '_price']
-            quantity = user_states[chat_id + '_quantity']
-            if message.photo:
-                productimagelink = message.photo[-1].file_id  # Get the largest photo
-                if CreateDatas.add_product(chat_id, message.from_user.username, name, "", price, quantity, "Default Category", productimagelink):
-                    bot.send_photo(chat_id, photo=productimagelink, caption=f"Product '{name}' added with photo! Price: {price}, Quantity: {quantity}")
-                    logger.info(f"Product '{name}' added with photo by {message.from_user.username}")
-                else:
-                    bot.send_message(chat_id, "Failed to add product. Check logs.")
-                del user_states[chat_id]
-                del user_states[chat_id + '_name']
-                del user_states[chat_id + '_price']
-                del user_states[chat_id + '_quantity']
-                bot.send_message(chat_id, "Choose an option:", reply_markup=create_admin_keyboard())
+                user_states[str(chat_id)] = "awaiting_product_photo_upload"
+                bot.send_message(chat_id, "Send the product photo (or type 'skip' again):")
+        elif state == "awaiting_product_photo_upload" and message.photo:
+            name = user_states[str(chat_id) + '_name']
+            price = user_states[str(chat_id) + '_price']
+            quantity = user_states[str(chat_id) + '_quantity']
+            productimagelink = message.photo[-1].file_id  # Largest photo
+            if CreateDatas.add_product(chat_id, message.from_user.username, name, "", price, quantity, "Default Category", productimagelink):
+                bot.send_photo(chat_id, photo=productimagelink, caption=f"Product '{name}' added with photo! Price: {price}, Quantity: {quantity}")
+                logger.info(f"Product '{name}' added with photo by {message.from_user.username}")
             else:
-                bot.send_message(chat_id, "No photo received. Type 'skip' to add without photo.")
-        elif user_states[chat_id] == "awaiting_edit_id":
+                bot.send_message(chat_id, "Failed to add product. Check logs.")
+            del user_states[str(chat_id)]
+            del user_states[str(chat_id) + '_name']
+            del user_states[str(chat_id) + '_price']
+            del user_states[str(chat_id) + '_quantity']
+            bot.send_message(chat_id, "Choose an option:", reply_markup=create_admin_keyboard())
+        elif state == "awaiting_edit_id":
             try:
                 product_id = int(text)
                 product = GetDataFromDB.get_product_by_id(product_id)
                 if product:
-                    user_states[chat_id] = "awaiting_edit_details"
-                    user_states[chat_id + '_edit_id'] = product_id
+                    user_states[str(chat_id)] = "awaiting_edit_details"
+                    user_states[str(chat_id) + '_edit_id'] = product_id
                     bot.send_message(chat_id, f"Editing {product['productname']}. Send new details (name,price,quantity):")
                 else:
                     bot.send_message(chat_id, "Product not found.")
                     bot.send_message(chat_id, "Choose an option:", reply_markup=create_admin_keyboard())
             except ValueError:
                 bot.send_message(chat_id, "Invalid product number. Send a number.")
-        elif user_states[chat_id] == "awaiting_edit_details":
+        elif state == "awaiting_edit_details":
             try:
                 name, price, quantity = text.split(',')
                 price = int(price)
                 quantity = int(quantity)
-                # Update product (placeholder - expand as needed)
-                # UpdateData.update_product_quantity(user_states[chat_id + '_edit_id'], quantity)
+                # Update product (placeholder)
                 bot.send_message(chat_id, f"Product updated to '{name}'! Price: {price}, Quantity: {quantity}")
-                del user_states[chat_id]
-                del user_states[chat_id + '_edit_id']
+                del user_states[str(chat_id)]
+                del user_states[str(chat_id) + '_edit_id']
                 bot.send_message(chat_id, "Choose an option:", reply_markup=create_admin_keyboard())
             except ValueError:
                 bot.send_message(chat_id, "Invalid format. Use: name,price,quantity")
@@ -247,7 +250,7 @@ def handle_text(message):
         else:
             bot.send_message(message.chat.id, "No products available yet.")
         bot.send_message(message.chat.id, "Choose an option:", reply_markup=create_main_keyboard())
-    elif text.startswith("admin,"):
+    elif text and text.startswith("admin,"):
         enter_admin_mode(message)
 
 if __name__ == '__main__':
