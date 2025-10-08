@@ -75,7 +75,7 @@ def create_main_keyboard():
     key1 = types.KeyboardButton("Shop Items 🛒")
     key2 = types.KeyboardButton("My Orders 🛍")
     key3 = types.KeyboardButton("Top Up Wallet 💰")
-    key4 = types.KeyboardButton("Support 📞")
+    key4 = types.KeyboardButton("Profile 👤")
     keyboard.add(key1, key2)
     keyboard.add(key3, key4)
     return keyboard
@@ -126,6 +126,18 @@ def send_welcome(message):
     except Exception as e:
         bot.send_message(chat_id, f"Error starting: {e}. Please try again or contact support.", reply_markup=create_main_keyboard())
         logger.error(f"Exception in send_welcome for {username} (ID: {chat_id}): {e}")
+
+# Profile
+@bot.message_handler(func=lambda message: message.text == "Profile 👤")
+def profile(message):
+    chat_id = message.chat.id
+    user = GetDataFromDB.get_user(chat_id)
+    balance = user['wallet'] if user else 0
+    orders = GetDataFromDB.get_orders(chat_id)
+    orders_count = len(orders) if orders else 0
+    response = f"Profile:\nUsername: {message.from_user.username}\nBalance: {balance} {store_currency}\nOrders: {orders_count}"
+    bot.send_message(chat_id, response)
+    logger.info(f"Profile viewed by {message.from_user.username} (ID: {chat_id})")
 
 # Top up wallet
 @bot.message_handler(func=lambda message: message.text == "Top Up Wallet 💰")
