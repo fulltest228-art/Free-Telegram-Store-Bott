@@ -28,12 +28,16 @@ flask_app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'your-secret-key-here')
 webhook_url = os.getenv('WEBHOOK_URL')
 bot_token = os.getenv('TELEGRAM_BOT_TOKEN')
 store_currency = os.getenv('STORE_CURRENCY', 'USD')
+admin_ids = os.getenv('ADMIN_IDS', '987654321').split(',')  # Comma-separated list, default to your ID
 
 if not webhook_url or not bot_token:
     logger.error("Missing required environment variables: WEBHOOK_URL or TELEGRAM_BOT_TOKEN")
     exit(1)
 
 bot = TeleBot(bot_token, threaded=False)
+
+# Store user states (e.g., waiting for product details)
+user_states = {}
 
 # Set up webhook only if needed
 try:
@@ -75,7 +79,7 @@ def create_main_keyboard():
     keyboard.add(key2, key3)
     return keyboard
 
-# Admin keyboard (for adding/editing items)
+# Admin keyboard
 def create_admin_keyboard():
     keyboard = types.ReplyKeyboardMarkup(one_time_keyboard=True, resize_keyboard=True)
     keyboard.row_width = 2
@@ -116,33 +120,72 @@ def send_welcome(message):
 def enter_admin_mode(message):
     chat_id = message.chat.id
     username = message.from_user.username
-    # Assume admin ID is known (e.g., your chat ID). Replace with your ID.
-    admin_id = 8354685313  # Change this to your Telegram chat ID
-    if chat_id == admin_id and CreateDatas.add_admin(chat_id, username):
+    if str(chat_id) in admin_ids and CreateDatas.add_admin(chat_id, username):
         bot.send_message(chat_id, "Admin mode activated. Choose an option:", reply_markup=create_admin_keyboard())
         logger.info(f"Admin mode activated for {username} (ID: {chat_id})")
     else:
         bot.send_message(chat_id, "You are not an admin.", reply_markup=create_main_keyboard())
         logger.warning(f"Non-admin {username} (ID: {chat_id}) tried to enter admin mode")
 
-# Handle admin actions (basic implementation)
+# Handle admin actions
 @bot.message_handler(func=lambda message: message.text in ["Add Item 📦", "Edit Item ✏️", "Back 🔙"])
 def handle_admin_action(message):
     chat_id = message.chat.id
     text = message.text
     if text == "Add Item 📦":
-        bot.send_message(chat_id, "Send product details (name, price, quantity) in format: name,price,quantity")
+        user_states[chat_id] = "awaiting_product_details"
+        bot.send_message(chat_id, "Send product details (name,price,quantity), e.g., TestProduct,10,5")
     elif text == "Edit Item ✏️":
+        user_states[chat_id] = "awaiting_product_id"
         bot.send_message(chat_id, "Send product number to edit")
     elif text == "Back 🔙":
+        del user_states[chat_id]
         bot.send_message(chat_id, "Returning to main menu.", reply_markup=create_main_keyboard())
 
+# Handle text input for admin actions
 @bot.message_handler(content_types=['text'])
 def handle_text(message):
-    if message.text.startswith("admin,"):
-        enter_admin_mode(message)
-    elif message.text == "/shop":
+    chat_id = message.chat.id
+    text = message.text
+    if chat_id in user_states:
+        if user_states[chat_id] == "awaiting_product_details":
+            try:
+                name, price, quantity = text.split(',')
+                price = int(price)
+                quantity = int(quantity)
+                if CreateDatas.add_product(chat_id, message.from_user.username, name, "", price, quantity, "Default Category"):
+                    bot.send_message(chat_id, f"Product '{name}' added successfully! Price: {price}, Quantity: {quantity}")
+                    logger.info(f"Product '{name}' added by {message.from_user.username}")
+                else:
+                    bot.send_message(chat_id, "Failed to add product. Check logs.")
+                    logger.error(f"Failed to add product '{name}' by {message.from_user.username}")
+                del user_states[chat_id]
+            except ValueError:
+                bot.send_message(chat_id, "Invalid format. Use: name,price,quantity (e.g., TestProduct,10,5)")
+                logger.warning(f"Invalid input format from {message.from_user.username}: {text}")
+        elif user_states[chat_id] == "awaiting_product_id":
+            try:
+                product_id = int(text)
+                # Placeholder for edit logic
+                bot.send_message(chat_id, f"Editing product {product_id}. Send new details (name,price,quantity).")
+                user_states[chat_id] = "awaiting_edit_details"
+            except ValueError:
+                bot.send_message(chat_id, "Invalid product number. Send a number.")
+                logger.warning(f"Invalid product ID from {message.from_user.username}: {text}")
+        elif user_states[chat_id] == "awaiting_edit_details":
+            try:
+                name, price, quantity = text.split(',')
+                price = int(price)
+                quantity = int(quantity)
+                # Add edit logic here (e.g., UpdateData.update_product_quantity)
+                bot.send_message(chat_id, f"Product {name} updated! Price: {price}, Quantity: {quantity}")
+                del user_states[chat_id]
+            except ValueError:
+                bot.send_message(chat_id, "Invalid format. Use: name,price,quantity")
+    elif text == "/shop":
         bot.send_message(message.chat.id, "Shop coming soon!", reply_markup=create_main_keyboard())
+    elif text.startswith("admin,"):
+        enter_admin_mode(message)
 
 if __name__ == '__main__':
     try:
