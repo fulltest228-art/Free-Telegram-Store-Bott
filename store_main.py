@@ -28,7 +28,7 @@ flask_app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'your-secret-key-here')
 webhook_url = os.getenv('WEBHOOK_URL')
 bot_token = os.getenv('TELEGRAM_BOT_TOKEN')
 store_currency = os.getenv('STORE_CURRENCY', 'USD')
-admin_ids = os.getenv('ADMIN_IDS', '987654321').split(',')
+admin_ids = os.getenv('ADMIN_IDS', '8354685313').split(',')
 
 if not webhook_url or not bot_token:
     logger.error("Missing required environment variables: WEBHOOK_URL or TELEGRAM_BOT_TOKEN")
