@@ -29,9 +29,10 @@ webhook_url = os.getenv('WEBHOOK_URL')
 bot_token = os.getenv('TELEGRAM_BOT_TOKEN')
 store_currency = os.getenv('STORE_CURRENCY', 'USD')
 admin_ids = os.getenv('ADMIN_IDS', '8354685313').split(',')
+payment_provider_token = os.getenv('PAYMENT_PROVIDER_TOKEN')
 
-if not webhook_url or not bot_token:
-    logger.error("Missing required environment variables: WEBHOOK_URL or TELEGRAM_BOT_TOKEN")
+if not webhook_url or not bot_token or not payment_provider_token:
+    logger.error("Missing required environment variables: WEBHOOK_URL, TELEGRAM_BOT_TOKEN, or PAYMENT_PROVIDER_TOKEN")
     exit(1)
 
 bot = TeleBot(bot_token, threaded=False)
@@ -97,6 +98,7 @@ def create_admin_keyboard():
 def callback_query(call):
     try:
         logger.info(f"Callback received: {call.data}")
+        chat_id = call.message.chat.id
         if call.data.startswith("getcats_"):
             input_catees = call.data.replace('getcats_', '')
             CategoriesDatas.get_category_products(call.message, input_catees)
@@ -104,8 +106,7 @@ def callback_query(call):
             input_cate = call.data.replace('getproduct_', '')
             UserOperations.purchase_a_products(call.message, input_cate)
         elif call.data == "buy_product":
-            # Handle buy with wallet check
-            user = GetDataFromDB.get_user(call.message.chat.id)
+            user = GetDataFromDB.get_user(chat_id)
             balance = user['wallet'] if user else 0
             bot.answer_callback_query(call.id, f"Your balance: {balance} {store_currency}")
     except Exception as e:
@@ -126,6 +127,37 @@ def send_welcome(message):
     except Exception as e:
         bot.send_message(chat_id, f"Error starting: {e}. Please try again or contact support.", reply_markup=create_main_keyboard())
         logger.error(f"Exception in send_welcome for {username} (ID: {chat_id}): {e}")
+
+# Shop Items
+@bot.message_handler(func=lambda message: message.text == "Shop Items 🛒")
+def shop_items(message):
+    chat_id = message.chat.id
+    products = GetDataFromDB.get_products()
+    if products:
+        keyboard = types.InlineKeyboardMarkup()
+        for product in products:
+            if product['productquantity'] > 0:
+                button = types.InlineKeyboardButton(text=f"Buy {product['productname']} ({product['productprice']} {store_currency})", callback_data=f"getproduct_{product['productnumber']}")
+                keyboard.add(button)
+        bot.send_message(chat_id, "Available products:", reply_markup=keyboard)
+    else:
+        bot.send_message(chat_id, "No products available yet.", reply_markup=create_main_keyboard())
+    logger.info(f"Shop items viewed by {message.from_user.username} (ID: {chat_id})")
+
+# My Orders
+@bot.message_handler(func=lambda message: message.text == "My Orders 🛍")
+def my_orders(message):
+    chat_id = message.chat.id
+    orders = GetDataFromDB.get_orders(chat_id)
+    if orders:
+        response = "Your orders:\n"
+        for order in orders:
+            response += f"Order #{order['ordernumber']}: {order['productname']} - {order['productprice']} {store_currency}\n"
+        bot.send_message(chat_id, response)
+    else:
+        bot.send_message(chat_id, "No orders yet.")
+    bot.send_message(chat_id, "Choose an option:", reply_markup=create_main_keyboard())
+    logger.info(f"My orders viewed by {message.from_user.username} (ID: {chat_id})")
 
 # Profile
 @bot.message_handler(func=lambda message: message.text == "Profile 👤")
@@ -157,16 +189,18 @@ def send_topup_invoice(message):
         chat_id=chat_id,
         title="Top Up Wallet",
         description=f"Add {amount_ton} TON to your wallet",
-        provider_token=os.getenv('PAYMENT_PROVIDER_TOKEN'),
+        provider_token=payment_provider_token,
         currency='XTR',  # TON currency
         prices=prices,
         start_parameter="topup",
-        payload="topup_payload"
+        payload=f"topup_{chat_id}"
     )
+    logger.info(f"Top up invoice sent to {message.from_user.username} (ID: {chat_id})")
 
 @bot.pre_checkout_query_handler(func=lambda query: True)
 def pre_checkout_query(pre_checkout_query):
     bot.answer_pre_checkout_query(pre_checkout_query.id, ok=True)
+    logger.info(f"Pre-checkout approved for {pre_checkout_query.from_user.username} (ID: {pre_checkout_query.from_user.id})")
 
 @bot.message_handler(content_types=['successful_payment'])
 def successful_payment(message):
@@ -177,6 +211,7 @@ def successful_payment(message):
         logger.info(f"Top up successful for {message.from_user.username} (ID: {chat_id}): {amount} TON")
     else:
         bot.send_message(chat_id, "Top up failed. Contact support.")
+        logger.error(f"Top up failed for {message.from_user.username} (ID: {chat_id})")
 
 # Admin command to enter admin mode
 @bot.message_handler(commands=['admin'])
@@ -212,8 +247,9 @@ def handle_admin_action(message):
             bot.send_message(chat_id, "No products yet.")
         bot.send_message(chat_id, "Choose an option:", reply_markup=create_admin_keyboard())
     elif text == "Back 🔙":
-        if str(chat_id) in user_states:
-            del user_states[str(chat_id)]
+        state_keys = [k for k in user_states.keys() if k.startswith(str(chat_id))]
+        for key in state_keys:
+            del user_states[key]
         bot.send_message(chat_id, "Returning to main menu.", reply_markup=create_main_keyboard())
 
 # Handle text and photo input for admin actions
@@ -254,10 +290,9 @@ def handle_text(message):
                     logger.info(f"Product '{name}' added by {message.from_user.username}")
                 else:
                     bot.send_message(chat_id, "Failed to add product. Check logs.")
-                del user_states[str(chat_id)]
-                del user_states[str(chat_id) + '_name']
-                del user_states[str(chat_id) + '_price']
-                del user_states[str(chat_id) + '_quantity']
+                state_keys = [k for k in user_states.keys() if k.startswith(str(chat_id))]
+                for key in state_keys:
+                    del user_states[key]
                 bot.send_message(chat_id, "Choose an option:", reply_markup=create_admin_keyboard())
             else:
                 user_states[str(chat_id)] = "awaiting_product_photo_upload"
@@ -267,16 +302,15 @@ def handle_text(message):
             price = user_states[str(chat_id) + '_price']
             quantity = user_states[str(chat_id) + '_quantity']
             if message.photo:
-                productimagelink = message.photo[-1].file_id  # Largest photo
+                productimagelink = message.photo[-1].file_id
                 if CreateDatas.add_product(chat_id, message.from_user.username, name, "", price, quantity, "Default Category", productimagelink):
                     bot.send_photo(chat_id, photo=productimagelink, caption=f"Product '{name}' added with photo! Price: {price}, Quantity: {quantity}")
                     logger.info(f"Product '{name}' added with photo by {message.from_user.username}")
                 else:
                     bot.send_message(chat_id, "Failed to add product. Check logs.")
-                del user_states[str(chat_id)]
-                del user_states[str(chat_id) + '_name']
-                del user_states[str(chat_id) + '_price']
-                del user_states[str(chat_id) + '_quantity']
+                state_keys = [k for k in user_states.keys() if k.startswith(str(chat_id))]
+                for key in state_keys:
+                    del user_states[key]
                 bot.send_message(chat_id, "Choose an option:", reply_markup=create_admin_keyboard())
             elif text and text.lower() == 'skip':
                 if CreateDatas.add_product(chat_id, message.from_user.username, name, "", price, quantity, "Default Category", productimagelink):
@@ -284,10 +318,9 @@ def handle_text(message):
                     logger.info(f"Product '{name}' added by {message.from_user.username}")
                 else:
                     bot.send_message(chat_id, "Failed to add product. Check logs.")
-                del user_states[str(chat_id)]
-                del user_states[str(chat_id) + '_name']
-                del user_states[str(chat_id) + '_price']
-                del user_states[str(chat_id) + '_quantity']
+                state_keys = [k for k in user_states.keys() if k.startswith(str(chat_id))]
+                for key in state_keys:
+                    del user_states[key]
                 bot.send_message(chat_id, "Choose an option:", reply_markup=create_admin_keyboard())
             else:
                 bot.send_message(chat_id, "Please send a photo or type 'skip'.")
@@ -311,8 +344,9 @@ def handle_text(message):
                 quantity = int(quantity)
                 # Update product (placeholder)
                 bot.send_message(chat_id, f"Product updated to '{name}'! Price: {price}, Quantity: {quantity}")
-                del user_states[str(chat_id)]
-                del user_states[str(chat_id) + '_edit_id']
+                state_keys = [k for k in user_states.keys() if k.startswith(str(chat_id))]
+                for key in state_keys:
+                    del user_states[key]
                 bot.send_message(chat_id, "Choose an option:", reply_markup=create_admin_keyboard())
             except ValueError:
                 bot.send_message(chat_id, "Invalid format. Use: name,price,quantity")
