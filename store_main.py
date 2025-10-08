@@ -47,18 +47,13 @@ except Exception as e:
 # Process webhook calls
 @flask_app.route('/webhook', methods=['POST'])
 def webhook():
-    try:
-        if request.headers.get('content-type') == 'application/json':
-            json_string = request.get_data().decode('utf-8')
-            update = types.Update.de_json(json_string)
-            bot.process_new_updates([update])
-            return '', 200
-        else:
-            logger.warning("Invalid content type in webhook request")
-            return '', 400
-    except Exception as e:
-        logger.error(f"Error processing webhook: {e}")
-        return '', 500
+    if request.headers.get('content-type') == 'application/json':
+        json_string = request.get_data().decode('utf-8')
+        update = types.Update.de_json(json_string)
+        bot.process_new_updates([update])
+        return '', 200
+    logger.warning("Invalid content type in webhook request")
+    return '', 400
 
 @flask_app.route('/', methods=['HEAD', 'GET'])
 def health_check():
@@ -85,7 +80,6 @@ def callback_query(call):
         elif call.data.startswith("getproduct_"):
             input_cate = call.data.replace('getproduct_', '')
             UserOperations.purchase_a_products(call.message, input_cate)
-        # [Add other callback handlers as needed from original]
     except Exception as e:
         logger.error(f"Callback error: {e}")
 
