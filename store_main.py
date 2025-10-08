@@ -115,13 +115,17 @@ def callback_query(call):
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
     chat_id = message.chat.id
-    username = message.from_user.username
-    if CreateDatas.add_user(chat_id, username):
-        bot.send_message(chat_id, "Welcome to the store! Use /shop to browse.", reply_markup=create_main_keyboard())
-        logger.info(f"Sent welcome to {username} (ID: {chat_id})")
-    else:
-        bot.send_message(chat_id, "Failed to register you. Contact support.", reply_markup=create_main_keyboard())
-        logger.error(f"Failed to add user {username} (ID: {chat_id})")
+    username = message.from_user.username or "Unknown"
+    try:
+        if CreateDatas.add_user(chat_id, username):
+            bot.send_message(chat_id, f"Welcome to the store, {username}! Use /shop to browse.", reply_markup=create_main_keyboard())
+            logger.info(f"Sent welcome to {username} (ID: {chat_id})")
+        else:
+            bot.send_message(chat_id, f"Failed to register you, {username}. Contact support.", reply_markup=create_main_keyboard())
+            logger.error(f"Failed to add user {username} (ID: {chat_id})")
+    except Exception as e:
+        bot.send_message(chat_id, f"Error starting: {e}. Please try again or contact support.", reply_markup=create_main_keyboard())
+        logger.error(f"Exception in send_welcome for {username} (ID: {chat_id}): {e}")
 
 # Top up wallet
 @bot.message_handler(func=lambda message: message.text == "Top Up Wallet 💰")
@@ -196,7 +200,8 @@ def handle_admin_action(message):
             bot.send_message(chat_id, "No products yet.")
         bot.send_message(chat_id, "Choose an option:", reply_markup=create_admin_keyboard())
     elif text == "Back 🔙":
-        del user_states[str(chat_id)]
+        if str(chat_id) in user_states:
+            del user_states[str(chat_id)]
         bot.send_message(chat_id, "Returning to main menu.", reply_markup=create_main_keyboard())
 
 # Handle text and photo input for admin actions
