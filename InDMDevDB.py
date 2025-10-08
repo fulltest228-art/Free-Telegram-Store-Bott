@@ -35,7 +35,7 @@ class CreateTables:
                 )""")
                 cursor.execute("""CREATE TABLE IF NOT EXISTS ShopProductTable(
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    productnumber INTEGER UNIQUE NOT NULL DEFAULT (ABS(RANDOM()) % 1000000), -- Auto-generated unique number
+                    productnumber INTEGER UNIQUE NOT NULL DEFAULT (ABS(RANDOM()) % 1000000),
                     admin_id INTEGER NOT NULL,
                     username TEXT,
                     productname TEXT NOT NULL,
@@ -125,12 +125,12 @@ class CreateDatas:
             return False
 
     @staticmethod
-    def add_product(admin_id, username, productname, productdescription, productprice, productquantity, productcategory):
+    def add_product(admin_id, username, productname, productdescription, productprice, productquantity, productcategory, productimagelink=None):
         try:
             with db_lock:
                 cursor.execute(
-                    "INSERT INTO ShopProductTable (admin_id, username, productname, productdescription, productprice, productquantity, productcategory) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                    (admin_id, username, productname, productdescription, productprice, productquantity, productcategory)
+                    "INSERT INTO ShopProductTable (admin_id, username, productname, productdescription, productprice, productquantity, productcategory, productimagelink) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    (admin_id, username, productname, productdescription, productprice, productquantity, productcategory, productimagelink)
                 )
                 db_connection.commit()
                 logger.info(f"Product added: {productname}")
@@ -169,6 +169,16 @@ class GetDataFromDB:
                 return cursor.fetchone()
         except Exception as e:
             logger.error(f"Error getting product {productnumber}: {e}")
+            return None
+
+    @staticmethod
+    def get_categories():
+        try:
+            with db_lock:
+                cursor.execute("SELECT DISTINCT productcategory FROM ShopProductTable")
+                return cursor.fetchall()
+        except Exception as e:
+            logger.error(f"Error getting categories: {e}")
             return None
 
 class UpdateData:
