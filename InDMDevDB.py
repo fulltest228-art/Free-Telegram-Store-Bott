@@ -140,6 +140,22 @@ class CreateDatas:
             db_connection.rollback()
             return False
 
+    @staticmethod
+    def topup_wallet(user_id, amount):
+        try:
+            with db_lock:
+                cursor.execute(
+                    "UPDATE ShopUserTable SET wallet = wallet + ? WHERE user_id = ?",
+                    (amount, user_id)
+                )
+                db_connection.commit()
+                logger.info(f"Wallet topped up for user {user_id} by {amount}")
+                return True
+        except Exception as e:
+            logger.error(f"Error topping up wallet for user {user_id}: {e}")
+            db_connection.rollback()
+            return False
+
 class GetDataFromDB:
     @staticmethod
     def get_user(user_id):
@@ -181,7 +197,28 @@ class GetDataFromDB:
             logger.error(f"Error getting categories: {e}")
             return None
 
+    @staticmethod
+    def get_wallet_balance(user_id):
+        user = GetDataFromDB.get_user(user_id)
+        return user['wallet'] if user else 0
+
 class UpdateData:
+    @staticmethod
+    def deduct_wallet(user_id, amount):
+        try:
+            with db_lock:
+                cursor.execute(
+                    "UPDATE ShopUserTable SET wallet = wallet - ? WHERE user_id = ? AND wallet >= ?",
+                    (amount, user_id, amount)
+                )
+                db_connection.commit()
+                logger.info(f"Wallet deducted for user {user_id} by {amount}")
+                return cursor.rowcount > 0  # True if updated
+        except Exception as e:
+            logger.error(f"Error deducting wallet for user {user_id}: {e}")
+            db_connection.rollback()
+            return False
+
     @staticmethod
     def update_product_quantity(productnumber, new_quantity):
         try:
