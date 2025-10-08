@@ -35,13 +35,17 @@ if not webhook_url or not bot_token:
 
 bot = TeleBot(bot_token, threaded=False)
 
-# Set up webhook
+# Set up webhook only if needed
 try:
-    bot.remove_webhook()
-    bot.set_webhook(url=f"{webhook_url}/webhook")
-    logger.info(f"Webhook set successfully to {webhook_url}/webhook")
+    webhook_info = bot.get_webhook_info()
+    if webhook_info.url != f"{webhook_url}/webhook":
+        bot.remove_webhook()
+        bot.set_webhook(url=f"{webhook_url}/webhook")
+        logger.info(f"Webhook set successfully to {webhook_url}/webhook")
+    else:
+        logger.info(f"Webhook already set to {webhook_url}/webhook")
 except Exception as e:
-    logger.error(f"Failed to set webhook: {e}")
+    logger.error(f"Failed to manage webhook: {e}")
     exit(1)
 
 # Process webhook calls
@@ -71,10 +75,21 @@ def create_main_keyboard():
     keyboard.add(key2, key3)
     return keyboard
 
+# Admin keyboard (for adding/editing items)
+def create_admin_keyboard():
+    keyboard = types.ReplyKeyboardMarkup(one_time_keyboard=True, resize_keyboard=True)
+    keyboard.row_width = 2
+    key1 = types.KeyboardButton("Add Item 📦")
+    key2 = types.KeyboardButton("Edit Item ✏️")
+    key3 = types.KeyboardButton("Back 🔙")
+    keyboard.add(key1, key2, key3)
+    return keyboard
+
 # Callback handler
 @bot.callback_query_handler(func=lambda call: True)
 def callback_query(call):
     try:
+        logger.info(f"Callback received: {call.data}")
         if call.data.startswith("getcats_"):
             input_catees = call.data.replace('getcats_', '')
             CategoriesDatas.get_category_products(call.message, input_catees)
@@ -88,13 +103,51 @@ def callback_query(call):
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
     chat_id = message.chat.id
-    CreateDatas.add_user(chat_id, message.from_user.username)
-    bot.send_message(chat_id, "Welcome to the store! Use /shop to browse.", reply_markup=create_main_keyboard())
+    username = message.from_user.username
+    if CreateDatas.add_user(chat_id, username):
+        bot.send_message(chat_id, "Welcome to the store! Use /shop to browse.", reply_markup=create_main_keyboard())
+        logger.info(f"Sent welcome to {username} (ID: {chat_id})")
+    else:
+        bot.send_message(chat_id, "Failed to register you. Contact support.", reply_markup=create_main_keyboard())
+        logger.error(f"Failed to add user {username} (ID: {chat_id})")
+
+# Admin command to enter admin mode
+@bot.message_handler(commands=['admin'])
+def enter_admin_mode(message):
+    chat_id = message.chat.id
+    username = message.from_user.username
+    # Assume admin ID is known (e.g., your chat ID). Replace with your ID.
+    admin_id = 123456789  # Change this to your Telegram chat ID
+    if chat_id == admin_id and CreateDatas.add_admin(chat_id, username):
+        bot.send_message(chat_id, "Admin mode activated. Choose an option:", reply_markup=create_admin_keyboard())
+        logger.info(f"Admin mode activated for {username} (ID: {chat_id})")
+    else:
+        bot.send_message(chat_id, "You are not an admin.", reply_markup=create_main_keyboard())
+        logger.warning(f"Non-admin {username} (ID: {chat_id}) tried to enter admin mode")
+
+# Handle admin actions (basic implementation)
+@bot.message_handler(func=lambda message: message.text in ["Add Item 📦", "Edit Item ✏️", "Back 🔙"])
+def handle_admin_action(message):
+    chat_id = message.chat.id
+    text = message.text
+    if text == "Add Item 📦":
+        bot.send_message(chat_id, "Send product details (name, price, quantity) in format: name,price,quantity")
+    elif text == "Edit Item ✏️":
+        bot.send_message(chat_id, "Send product number to edit")
+    elif text == "Back 🔙":
+        bot.send_message(chat_id, "Returning to main menu.", reply_markup=create_main_keyboard())
+
+@bot.message_handler(content_types=['text'])
+def handle_text(message):
+    if message.text.startswith("admin,"):
+        enter_admin_mode(message)
+    elif message.text == "/shop":
+        bot.send_message(message.chat.id, "Shop coming soon!", reply_markup=create_main_keyboard())
 
 if __name__ == '__main__':
     try:
-      logger.info("Starting Flask application...")
-      flask_app.run(debug=False, host='0.0.0.0', port=int(os.getenv('PORT', 5000)))
+        logger.info("Starting Flask application...")
+        flask_app.run(debug=False, host='0.0.0.0', port=int(os.getenv('PORT', 5000)))
     except Exception as e:
         logger.error(f"Error starting Flask application: {e}")
         exit(1)
